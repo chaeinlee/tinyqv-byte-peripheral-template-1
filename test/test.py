@@ -32,20 +32,30 @@ async def test_project(dut):
 
     dut._log.info("Test project behavior")
 
-    # Test register write and read back
-    await tqv.write_reg(0, 20)
-    assert await tqv.read_reg(0) == 20
+    async def apply_sample(val):
+        dut.ui_in.value = val
+        dut.data_write.value = 1
+        await RisingEdge(dut.clk)
+        dut.data_write.value = 0
+        await RisingEdge(dut.clk)
 
-    # Set an input value, in the example this will be added to the register value
-    dut.ui_in.value = 30
+    # Test sequence of samples
+    inputs = [10, 20, 30, 40, 50]
+    expected_outputs = []
 
-    # Wait for two clock cycles to see the output values, because ui_in is synchronized over two clocks,
-    # and a further clock is required for the output to propagate.
-    await ClockCycles(dut.clk, 3)
+    # Calculate expected moving average (coeffs = [1,1,1,1] / 4)
+    taps = [0, 0, 0, 0]
+    for val in inputs:
+        taps = [val] + taps[:-1]
+        avg = sum(taps) >> 2
+        expected_outputs.append(avg)
 
-    # The following assertion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
-
-    # Keep testing the module by changing the input values, waiting for
-    # one or more clock cycles, and asserting the expected output values.
+    # Apply and check outputs
+    for i, val in enumerate(inputs):
+        await apply_sample(val)
+        # allow one extra clock for output to update
+        await ClockCycles(dut.clk, 1)
+        out_val = int(dut.uo_out.value)
+        dut._log.info(f"Sample {i}: Input={val}, Output={out_val}, Expected={expected_outputs[i]}")
+        assert out_val == expected_outputs[i], \
+            f"Mismatch at sample {i}: got {out_val}, expected {expected_outputs[i]}"
