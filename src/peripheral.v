@@ -26,26 +26,38 @@ module tqvp_example (
     output [7:0]  data_out      // Data out from the peripheral, set this in accordance with the supplied address
 );
 
-    // Example: Implement an 8-bit read/write register at address 0
-    reg [7:0] example_data;
-    always @(posedge clk) begin
+    / Shift register for 4 most recent samples
+    reg [7:0] samples[0:3];
+    reg [7:0] filter_out;
+
+    integer i;
+
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            example_data <= 0;
-        end else begin
-            if (address == 4'h0) begin
-                if (data_write) example_data <= data_in;
-            end
+            for (i = 0; i < 4; i = i + 1)
+                samples[i] <= 8'd0;
+            filter_out <= 8'd0;
+        end else if (data_write) begin
+            // Shift samples
+            samples[3] <= samples[2];
+            samples[2] <= samples[1];
+            samples[1] <= samples[0];
+            samples[0] <= ui_in;
+
+            // FIR computation: simple average (coeffs = [1,1,1,1])
+            filter_out <= (samples[0] + samples[1] + samples[2] + samples[3]) >> 2;
         end
     end
 
-    // All output pins must be assigned. If not used, assign to 0.
-    assign uo_out  = ui_in + example_data;  // Example: uo_out is the sum of ui_in and the example register
+    // Drive outputs
+    assign uo_out   = filter_out;
 
-    // Address 0 reads the example data register.  
-    // Address 1 reads ui_in
-    // All other addresses read 0.
-    assign data_out = (address == 4'h0) ? example_data :
-                      (address == 4'h1) ? ui_in :
-                      8'h0;    
+    // Address map
+    // 0: FIR output
+    // 1: Current input sample
+    // others: 0
+    assign data_out = (address == 4'h0) ? filter_out :
+                      (address == 4'h1) ? ui_in      :
+                                           8'd0;
 
 endmodule
